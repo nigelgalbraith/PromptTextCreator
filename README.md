@@ -73,3 +73,9 @@ Start the stack using the helper script:
 ```bash
 ./manage.sh
 
+
+## License
+
+MIT License.
+
+Anyone is free to use, modify, distribute, or improve this code.
