@@ -4,7 +4,6 @@ PromptTextCreator is a local, Docker-based text generation tool built around Oll
 
 It allows you to define structured prompt profiles, generate text using a local LLM, and optionally convert output to speech using Piper TTS.
 
-The design goal is simple:
 - keep everything local
 - keep profiles JSON-driven
 - avoid hardcoded prompts
