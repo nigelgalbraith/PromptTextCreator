@@ -8,6 +8,31 @@
   --text: #e5e7eb;
   --border: #1f2937;
   --accent: #06b6d4;
+  --surface: #1a2232;
+  --surface-alt: #0e1524;
+  --danger: #ef4444;
+  --button-bg: #223044;
+  --button-mini-bg: #1e293b;
+  --text-strong: #ffffff;
+  --accent-contrast: #071018;
+  --overlay-soft: rgba(255,255,255,0.03);
+}
+
+html[data-theme="light"] {
+  --bg: #f8fafc;
+  --card: #ffffff;
+  --muted: #4b5563;
+  --text: #111827;
+  --border: #cbd5e1;
+  --accent: #0891b2;
+  --surface: #f1f5f9;
+  --surface-alt: #e2e8f0;
+  --danger: #dc2626;
+  --button-bg: #cbd5e1;
+  --button-mini-bg: #e2e8f0;
+  --text-strong: #ffffff;
+  --accent-contrast: #f8fafc;
+  --overlay-soft: rgba(15,23,42,0.06);
 }
 
 /* =========================
@@ -34,6 +59,58 @@ h1 {
   font-size: 1.25rem;
   margin: 0;
 }
+
+/* =======================
+   Theme Toggle
+======================= */
+.theme-toggle-wrapper {
+  display: flex;
+  justify-content: center;
+  margin: 1rem 0 1.5rem 0;
+}
+
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: 1rem;
+
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+
+  background: var(--surface);
+  border: 2px solid var(--border);
+  border-radius: 12px;
+  padding: 0.6rem 0.9rem;
+
+  color: var(--accent);
+  font-weight: bold;
+  cursor: pointer;
+
+  transition: transform 0.2s ease, box-shadow 0.2s ease, color 0.2s ease;
+}
+
+.theme-toggle:hover,
+.theme-toggle:focus {
+  transform: translateY(-2px);
+  box-shadow: 0 0 12px var(--accent);
+  outline: none;
+}
+
+.theme-toggle:active {
+  transform: translateY(0);
+  box-shadow: none;
+}
+
+.theme-toggle-icon {
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.theme-toggle-text {
+  font-size: 0.95rem;
+}
+
 
 /* =========================
    Top Nav
@@ -72,22 +149,22 @@ h1 {
   padding: 0.4rem 0.8rem;
   border-radius: 0.6rem;
   border: 1px solid var(--border);
-  background: #1a2232;          
+  background: var(--surface);          
   transition: 0.15s ease;
   opacity: 0.9;
 }
 
 .nav .nav-links a:hover {
-  color: white;
+  color: var(--text-strong);
   opacity: 1;
   filter: brightness(1.15);
   border-color: var(--accent);
-  background: #0e1524;
+  background: var(--surface-alt);
 }
 
 .nav .nav-links a[aria-current="page"] {
   border-color: var(--accent);
-  background: #0e1524;
+  background: var(--surface-alt);
   opacity: 1;
 }
 
@@ -145,7 +222,7 @@ h1 {
 }
 
 .pane--error {
-  border-color: #ef4444;
+  border-color: var(--danger);
 }
 
 .pane h2 {
@@ -206,7 +283,7 @@ h1 {
    Buttons
    ========================= */
 button {
-  background: #223044;
+  background: var(--button-bg);
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 0.625rem;
@@ -214,11 +291,11 @@ button {
   font-weight: 600;
 }
 
-button.primary { background: var(--accent); color: #071018; border: none; }
+button.primary { background: var(--accent); color: var(--accent-contrast); border: none; }
 button:hover { filter: brightness(1.08); }
 
 button.mini {
-  background: #1e293b;
+  background: var(--button-mini-bg);
   border: 1px solid var(--border);
   padding: 0.25rem 0.5rem;
   border-radius: 0.375rem;
@@ -268,8 +345,8 @@ button.mini {
 }
 
 .checklist-item-row button.mini.danger {
-  background: #1e293b;
-  color: white;
+  background: var(--button-mini-bg);
+  color: var(--text-strong);
   border: none;
   padding: 0 6px;
   cursor: pointer;
@@ -289,7 +366,7 @@ label {
 
 input, textarea, select {
   width: 100%;
-  background: #0e1524;
+  background: var(--surface-alt);
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 0.625rem;
@@ -304,14 +381,14 @@ input, textarea, select {
 
 .form-field-key-row input.form-key-input {
   font-weight: 600;
-  background: #1a2232;
+  background: var(--surface);
   border: 1px solid var(--accent);
   margin-top: 0.25rem;
   margin-bottom: 0.5rem;
 }
 
 .form-field-value-row input.form-value-input {
-  background: #0e1524;
+  background: var(--surface-alt);
   border: 1px solid var(--border);
   opacity: 0.95;
 }
@@ -350,7 +427,7 @@ textarea { min-height: 8.75rem; resize: vertical; }
 
 .checklist-title-wrap input {
   font-weight: 600;
-  background: #1a2232;
+  background: var(--surface);
   border: 1px solid var(--accent);
   padding: 0.5rem;
   margin-bottom: 0.5rem;
@@ -358,7 +435,7 @@ textarea { min-height: 8.75rem; resize: vertical; }
 
 .checklist-items-wrap > div > div > input {
   font-weight: 400;
-  background: #0e1524;
+  background: var(--surface-alt);
   border: 1px solid var(--border);
   opacity: 0.9;
 }
@@ -387,7 +464,7 @@ textarea { min-height: 8.75rem; resize: vertical; }
   grid-template-columns: 1fr auto; 
   align-items: center;
   padding: 0.5rem 0.75rem;
-  background: rgba(255,255,255,0.03);
+  background: var(--overlay-soft);
   border: 1px solid var(--border);
   border-radius: 0.5rem;
 }
@@ -448,7 +525,7 @@ textarea { min-height: 8.75rem; resize: vertical; }
 .snippet-card {
   border: 1px solid var(--border);
   border-radius: 0.625rem;
-  background: rgba(255,255,255,0.03);
+  background: var(--overlay-soft);
   padding: 0.75rem;
 }
 
@@ -472,7 +549,7 @@ textarea { min-height: 8.75rem; resize: vertical; }
    Preview
    ========================= */
 .text {
-  background: #0e1524;
+  background: var(--surface-alt);
   border: 1px solid var(--border);
   border-radius: 0.75rem;
   padding: 1rem;

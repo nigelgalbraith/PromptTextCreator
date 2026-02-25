@@ -16,6 +16,19 @@
   <header class="header-centered">
     <h1>Profile Builder</h1>
 
+    <!-- Theme toggle button -->
+    <div class="theme-toggle-wrapper">
+      <button
+        class="theme-toggle"
+        type="button"
+        aria-label="Toggle light/dark mode"
+        aria-pressed="false"
+        title="Toggle light/dark mode">
+        <span class="theme-toggle-icon" aria-hidden="true">☾</span>
+        <span class="theme-toggle-text">Theme</span>
+      </button>
+    </div>
+
     <nav class="nav">
       <div class="nav-links">
         <a href="index.html">Generator</a>
@@ -95,6 +108,7 @@
 </div>
 
 <!-- Scripts -->
+<script src="js/Common/themeToggle.js"></script>
 <script src="js/PanesCore.js"></script>
 <script src="js/Common/StatusTickerPane.js"></script>
 <script src="js/Common/ProfileLoaderPane.js"></script>
