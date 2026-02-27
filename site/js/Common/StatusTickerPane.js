@@ -1,204 +1,197 @@
-// js/StatusTickerPane.js
-// Pane: Animated typewriter status ticker (standalone).
-// -----------------------------------------------------------------------------
-// HOW TO USE:
-//   <div
-//     data-pane="status-ticker"
-//     data-messages-url="data/messages.json"
-//     data-ticker-id="profile-main"
-//   ></div>
-//
-// NOTES:
-//   • Loads ticker messages from data-messages-url (or defaults).
-//   • Listens for scoped Panes events:
-//       - 'ticker:temporary'   → show a temporary message, then resume loop
-//       - 'ticker:setMessages' → replace base message list
-//   • Both events accept optional `tickerId` in detail to target a specific ticker.
-// -----------------------------------------------------------------------------
 
-(function () {
-  'use strict';
 
-  var DEFAULT_TICKER_MESSAGES = [
-    'Tip: Load a profile JSON to get started.',
-    'You can always export your current setup.'
-  ];
+const DEFAULT_TICKER_MESSAGES = [
+  'Tip: Load a profile JSON to get started.',
+  'You can always export your current setup.',
+];
 
-  var TYPING_DELAY  = 70;
-  var HOLD_DELAY    = 4000;
-  var BETWEEN_DELAY = 800;
-  var INITIAL_DELAY = 600;
-  var TEMP_MESSAGE_MS = 5000;
+const TYPING_DELAY = 70;
+const HOLD_DELAY = 4000;
+const BETWEEN_DELAY = 800;
+const INITIAL_DELAY = 600;
+const TEMP_MESSAGE_MS = 5000;
 
-  function loadTickerMessages(url) {
-    if (!url) return Promise.resolve(DEFAULT_TICKER_MESSAGES.slice());
-    return fetch(url)
-      .then(function (res) { return res.json(); })
-      .then(function (data) {
-        if (Array.isArray(data)) return data;
-        if (data && Array.isArray(data.messages)) return data.messages;
-        return DEFAULT_TICKER_MESSAGES.slice();
-      })
-      .catch(function () {
-        return DEFAULT_TICKER_MESSAGES.slice();
-      });
-  }
+// loadTickerMessages handles this function's logic.
+function loadTickerMessages(url) {
+  if (!url) return Promise.resolve(DEFAULT_TICKER_MESSAGES.slice());
+  // Handle async work before continuing UI updates.
+  return fetch(url)
+    .then((res) => res.json())
+    .then((data) => {
+      if (Array.isArray(data)) return data;
+      if (data && Array.isArray(data.messages)) return data.messages;
+      return DEFAULT_TICKER_MESSAGES.slice();
+    })
+    .catch(() => DEFAULT_TICKER_MESSAGES.slice());
+}
 
-  function StatusTicker(el, messages, opts) {
+class StatusTicker {
+  constructor(el, messages, opts = {}) {
     this.el = el;
     this.messages = messages || [];
-    this.opts = opts || {};
-
-    this.opts.typingDelay  = this.opts.typingDelay  || TYPING_DELAY;
-    this.opts.holdDelay    = this.opts.holdDelay    || HOLD_DELAY;
+    this.opts = opts;
+    this.opts.typingDelay = this.opts.typingDelay || TYPING_DELAY;
+    this.opts.holdDelay = this.opts.holdDelay || HOLD_DELAY;
     this.opts.betweenDelay = this.opts.betweenDelay || BETWEEN_DELAY;
     this.opts.initialDelay = this.opts.initialDelay || INITIAL_DELAY;
-
     this._idx = 0;
     this._running = false;
     this._stop = false;
     this._interrupt = false;
     this._tempSeq = 0;
   }
-
-  StatusTicker.prototype._sleep = function (ms) {
-    return new Promise(function (resolve) {
+  _sleep(ms) {
+    return new Promise((resolve) => {
       setTimeout(resolve, ms);
     });
-  };
-
-  StatusTicker.prototype._type = async function (text) {
-    var el = this.el;
-    el.textContent = '';
-    for (var i = 0; i < text.length; i++) {
+  }
+  async _type(text) {
+    this.el.textContent = '';
+    for (let i = 0; i < text.length; i += 1) {
       if (this._interrupt || this._stop) return;
-      el.textContent += text.charAt(i);
+      this.el.textContent += text.charAt(i);
+      // eslint-disable-next-line no-await-in-loop
       await this._sleep(this.opts.typingDelay);
     }
-  };
-
-  StatusTicker.prototype._loop = async function () {
+  }
+  async _loop() {
     this._running = true;
     await this._sleep(this.opts.initialDelay);
-
     while (!this._stop) {
       if (!this.messages.length) {
         await this._sleep(1000);
         continue;
       }
-
-      var text = this.messages[this._idx % this.messages.length];
-      this._idx++;
-
+      const text = this.messages[this._idx % this.messages.length];
+      this._idx += 1;
       this._interrupt = false;
       await this._type(text);
       if (this._interrupt || this._stop) break;
-
       await this._sleep(this.opts.holdDelay);
       if (this._interrupt || this._stop) break;
-
       await this._sleep(this.opts.betweenDelay);
     }
-
     this._running = false;
-  };
-
-  StatusTicker.prototype.start = function () {
+  }
+  start() {
     if (this._running) return;
     this._stop = false;
     this._interrupt = false;
     this._loop();
-  };
-
-  StatusTicker.prototype.stop = function () {
+  }
+  stop() {
     this._stop = true;
     this._interrupt = true;
-  };
-
-  StatusTicker.prototype.setMessages = function (msgs) {
+  }
+  setMessages(msgs) {
     this.messages = msgs || [];
     this._idx = 0;
-  };
-
-  StatusTicker.prototype.showTemporary = function (text, ms) {
-    var token = ++this._tempSeq;
-    var self = this;
-
+  }
+  showTemporary(text, ms) {
+    const token = ++this._tempSeq;
     this.stop();
     this.el.textContent = text;
-
-    this._sleep(ms || TEMP_MESSAGE_MS).then(function () {
-      if (token !== self._tempSeq) return;
-      if (self.messages && self.messages.length) {
-        self._stop = false;
-        self._interrupt = false;
-        self.start();
+    this._sleep(ms || TEMP_MESSAGE_MS).then(() => {
+      if (token !== this._tempSeq) return;
+      if (this.messages && this.messages.length) {
+        this._stop = false;
+        this._interrupt = false;
+        this.start();
       }
     });
-  };
-
-  function initTickerPane(container, api) {
-    var ds = container.dataset || {};
-    var messagesUrl = ds.messagesUrl || 'messages.json';
-    var tickerId = ds.tickerId || 'default';
-
-    var status = document.createElement('div');
-    status.className = 'status-text';
-
-    container.innerHTML = '';
-    container.appendChild(status);
-
-    var ticker = null;
-
-    loadTickerMessages(messagesUrl).then(function (msgs) {
-      ticker = new StatusTicker(status, msgs, {});
-      status.classList.add('show');
-      ticker.start();
-    });
-
-    // ticker:temporary
-    var offTmp = api.events.on('ticker:temporary', function (ev) {
-      var detail = (ev && ev.detail) ? ev.detail : {};
-      if (detail.tickerId && detail.tickerId !== tickerId) return;
-
-      var text = String(detail.text || '');
-      var ms = detail.ms;
-      var color = detail.color;
-
-      if (!text) return;
-
-      status.style.color = color ? color : '';
-
-      if (ticker) ticker.showTemporary(text, ms);
-      else status.textContent = text;
-    });
-
-    // ticker:setMessages
-    var offSet = api.events.on('ticker:setMessages', function (ev) {
-      var detail = (ev && ev.detail) ? ev.detail : {};
-      if (detail.tickerId && detail.tickerId !== tickerId) return;
-
-      var msgs = detail.messages;
-      if (!Array.isArray(msgs)) return;
-
-      if (ticker) ticker.setMessages(msgs);
-    });
-
-    return {
-      destroy: function () {
-        try { if (ticker && ticker.stop) ticker.stop(); } catch (e) {}
-        if (offTmp) offTmp();
-        if (offSet) offSet();
-      }
-    };
   }
+}
 
-  if (!window.Panes || !window.Panes.register) {
-    throw new Error('StatusTickerPane requires PanesCore (Panes.register not found).');
+
+// Wire Ticker Events.
+function wireTickerEvents({ events, tickerId, status, getTicker }) {
+  if (!events || typeof events.on !== 'function') {
+    return [];
   }
-
-  window.Panes.register('status-ticker', function (container, api) {
-    container.classList.add('pane-status-ticker');
-    return initTickerPane(container, api);
+  const offTmp = events.on('ticker:temporary', (ev) => {
+    const detail = ev && ev.detail ? ev.detail : {};
+    if (detail.tickerId && detail.tickerId !== tickerId) return;
+    const text = String(detail.text || '');
+    const ms = detail.ms;
+    const color = detail.color;
+    if (!text) return;
+    status.style.color = color || '';
+    const ticker = getTicker();
+    if (ticker) ticker.showTemporary(text, ms);
+    // Update DOM state so the UI reflects current data.
+    else status.textContent = text;
   });
-})();
+  const offSet = events.on('ticker:setMessages', (ev) => {
+    const detail = ev && ev.detail ? ev.detail : {};
+    if (detail.tickerId && detail.tickerId !== tickerId) return;
+    const msgs = detail.messages;
+    if (!Array.isArray(msgs)) return;
+    const ticker = getTicker();
+    if (ticker) ticker.setMessages(msgs);
+  });
+  return [offTmp, offSet].filter((off) => typeof off === 'function');
+}
+
+
+// Destroy Ticker.
+function destroyTicker(ticker, offFns) {
+  try {
+    if (ticker && typeof ticker.stop === 'function') {
+      ticker.stop();
+    }
+  } catch {
+    // Ignore ticker shutdown errors.
+  }
+  offFns.forEach((off) => {
+    try {
+      off();
+    } catch {
+      // Ignore listener cleanup errors.
+    }
+  });
+}
+
+
+// Build the status ticker pane with explicit options only.
+export function buildStatusTickerPane(options = {}) {
+  const {
+    messagesUrl = 'messages.json',
+    tickerId = 'default',
+    events = null,
+    tickerOptions = {},
+    onController,
+  } = options;
+  const node = document.createElement('div');
+  // Update DOM state so the UI reflects current data.
+  node.className = 'pane-status-ticker';
+  const status = document.createElement('div');
+  status.className = 'status-text';
+  node.appendChild(status);
+  let ticker = null;
+  const offFns = wireTickerEvents({
+    events,
+    tickerId,
+    status,
+    getTicker: () => ticker,
+  });
+  loadTickerMessages(messagesUrl).then((msgs) => {
+    ticker = new StatusTicker(status, msgs, tickerOptions);
+    const controller = {
+      start: () => ticker && ticker.start(),
+      stop: () => ticker && ticker.stop(),
+      setMessages: (nextMsgs) => ticker && ticker.setMessages(nextMsgs),
+      showTemporary: (text, ms) => ticker && ticker.showTemporary(text, ms),
+    };
+    if (typeof onController === 'function') {
+      onController(controller);
+    }
+    status.classList.add('show');
+    ticker.start();
+  });
+  return {
+    node,
+    destroy() {
+      destroyTicker(ticker, offFns);
+    },
+  };
+}

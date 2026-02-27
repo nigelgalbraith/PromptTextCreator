@@ -1,232 +1,180 @@
-// js/Builder/BuilderChecklistPane.js
-//
-// Builder checklist groups editor (scoped).
-// - Edits checklist groups for the builder/profile state
-// - Stores data in Panes scoped state (no window globals)
-// - Re-renders on state:changed:<stateKey>
-//
-// Expected state shape:
-//   state.options = [
-//     { title: "Group", items: [ { label: "Thing", selected?: false }, ... ] },
-//   ]
 
-(function () {
-  'use strict';
+import { DEFAULT_STATE_KEY, ensureProfileState } from '../core/profileState.js';
 
-  function ensureState(api, stateKey) {
-    var s = api.state.get(stateKey);
-    if (!s) {
-      s = {
-        form: {},
-        styles: [],
-        options: [],
-        mode: 'template',
-        template: '',
-        prompt: '',
-        ollama: null
-      };
-      api.state.set(stateKey, s);
-    }
-    if (!Array.isArray(s.options)) s.options = [];
-    return s;
-  }
-
-  function syncFromDOM(groupsWrap, State, api, stateKey) {
-    var result = [];
-    var groups = groupsWrap.querySelectorAll('.builder-group');
-
-    Array.prototype.forEach.call(groups, function (g) {
-      var inputs = g.querySelectorAll('input');
-      if (!inputs.length) return;
-
-      var title = (inputs[0].value || '').trim();
-
-      var items = Array.prototype.slice.call(inputs, 1)
-        .map(function (inp) { return { label: (inp.value || '').trim() }; })
-        .filter(function (it) { return it.label; });
-
-      if (title) result.push({ title: title, items: items });
-    });
-
-    State.options = result;
-    api.state.set(stateKey, State);
-  }
-
-  function itemRow(groupsWrap, State, api, stateKey, value, markLocalWrite) {
-    var row = document.createElement('div');
-    row.className = 'checklist-item-row';
-
-    var input = document.createElement('input');
-    input.placeholder = 'Item label';
-    input.value = value || '';
-
-    input.addEventListener('input', function () {
-      markLocalWrite();
-      syncFromDOM(groupsWrap, State, api, stateKey);
-    });
-
-    var btnRemove = document.createElement('button');
-    btnRemove.type = 'button';
-    btnRemove.className = 'mini danger';
-    btnRemove.textContent = '×';
-    btnRemove.addEventListener('click', function () {
-      row.remove();
-      markLocalWrite();
-      syncFromDOM(groupsWrap, State, api, stateKey);
-    });
-
-    row.appendChild(input);
-    row.appendChild(btnRemove);
-
-    return row;
-  }
-
-  function addGroup(groupsWrap, State, api, stateKey, title, items, markLocalWrite) {
-    title = title || '';
-    items = items || [];
-
-    var group = document.createElement('div');
-    group.className = 'group builder-group';
-
-    var lab = document.createElement('label');
-    lab.textContent = 'Group';
-
-    var titleInput = document.createElement('input');
-    titleInput.placeholder = 'Group Title (e.g., Core Capabilities)';
-    titleInput.value = title;
-
-    titleInput.addEventListener('input', function () {
-      markLocalWrite();
-      syncFromDOM(groupsWrap, State, api, stateKey);
-    });
-
-    var titleWrap = document.createElement('div');
-    titleWrap.className = 'checklist-title-wrap';
-    titleWrap.appendChild(lab);
-    titleWrap.appendChild(titleInput);
-
-    var itemsWrap = document.createElement('div');
-    itemsWrap.className = 'checklist-items-wrap';
-
-    var inner = document.createElement('div');
-
-    items.forEach(function (it) {
-      inner.appendChild(
-        itemRow(groupsWrap, State, api, stateKey, (it && it.label) || '', markLocalWrite)
-      );
-    });
-
-    var btnAdd = document.createElement('button');
-    btnAdd.type = 'button';
-    btnAdd.className = 'mini';
-    btnAdd.textContent = '+ Item';
-    btnAdd.addEventListener('click', function () {
-      inner.appendChild(itemRow(groupsWrap, State, api, stateKey, '', markLocalWrite));
-      markLocalWrite();
-      syncFromDOM(groupsWrap, State, api, stateKey);
-    });
-
-    itemsWrap.appendChild(inner);
-    itemsWrap.appendChild(btnAdd);
-
-    group.appendChild(titleWrap);
-    group.appendChild(itemsWrap);
-    groupsWrap.appendChild(group);
-
-    markLocalWrite();
-    syncFromDOM(groupsWrap, State, api, stateKey);
-  }
-
-  function render(container, api, stateKey, opts, markLocalWrite) {
-    opts = opts || {};
-
-    var titleText = opts.title || 'Checklist Groups';
-    var defaultGroupTitle = opts.defaultGroup || 'Core Skills';
-
-    var State = ensureState(api, stateKey);
-
-    container.innerHTML = '';
-
-    var section = document.createElement('section');
-    section.className = 'pane pane--builder-checklists';
-
-    var h2 = document.createElement('h2');
-    h2.className = 'pane-title';
-    h2.textContent = titleText;
-
-    var groupsWrap = document.createElement('div');
-    groupsWrap.className = 'builder-checklist-groups';
-
-    var btnAddGroup = document.createElement('button');
-    btnAddGroup.type = 'button';
-    btnAddGroup.className = 'mini';
-    btnAddGroup.textContent = '+ Add Group';
-
-    var actions = document.createElement('div');
-    actions.className = 'actions';
-    actions.appendChild(btnAddGroup);
-
-    section.appendChild(h2);
-    section.appendChild(groupsWrap);
-    section.appendChild(actions);
-    container.appendChild(section);
-
-    btnAddGroup.addEventListener('click', function () {
-      addGroup(groupsWrap, State, api, stateKey, '', [], markLocalWrite);
-    });
-
-    var existing = Array.isArray(State.options) ? State.options : [];
-
-    if (existing.length) {
-      existing.forEach(function (g) {
-        addGroup(groupsWrap, State, api, stateKey, g.title, g.items || [], markLocalWrite);
-      });
-    } else {
-      addGroup(groupsWrap, State, api, stateKey, defaultGroupTitle, [], markLocalWrite);
-    }
-  }
-
-  function initOne(container, api) {
-    if (!api || !api.state || !api.events) {
-      throw new Error('BuilderChecklistPane: missing Panes api');
-    }
-
-    var ds = container.dataset || {};
-    var stateKey = ds.stateKey || 'TEXT_PROFILE';
-
-    var opts = {
-      title: ds.title || 'Checklist Groups',
-      defaultGroup: ds.defaultGroup || 'Core Skills'
-    };
-
-    // Prevent re-render loops when *this pane* writes state on input.
-    var ignoreNext = false;
-    function markLocalWrite() {
-      ignoreNext = true;
-      setTimeout(function () { ignoreNext = false; }, 0);
-    }
-
-    render(container, api, stateKey, opts, markLocalWrite);
-
-    // Re-render when state changes externally (e.g., ProfileLoaderPane loads a file).
-    var off = api.events.on('state:changed:' + stateKey, function () {
-      if (ignoreNext) return;
-      render(container, api, stateKey, opts, markLocalWrite);
-    });
-
-    return {
-      destroy: function () {
-        if (off) off();
-      }
-    };
-  }
-
-  if (!window.Panes || !window.Panes.register) {
-    throw new Error('BuilderChecklistPane requires PanesCore (Panes.register not found).');
-  }
-
-  window.Panes.register('builder-checklists', function (container, api) {
-    container.classList.add('pane-builder-checklists');
-    return initOne(container, api);
+// syncFromDOM handles this function's logic.
+function syncFromDOM(groupsWrap, profileState, state, stateKey) {
+  const result = [];
+  const groups = groupsWrap.querySelectorAll('.builder-group');
+  Array.prototype.forEach.call(groups, (g) => {
+    const inputs = g.querySelectorAll('input');
+    if (!inputs.length) return;
+    const title = (inputs[0].value || '').trim();
+    const items = Array.prototype.slice
+      .call(inputs, 1)
+      .map((inp) => ({ label: (inp.value || '').trim() }))
+      .filter((it) => it.label);
+    if (title) result.push({ title, items });
   });
-})();
+  // Mutate shared state so dependent panes stay in sync.
+  profileState.options = result;
+  state.set(stateKey, profileState);
+}
+
+
+// Item Row.
+function itemRow(groupsWrap, profileState, state, stateKey, value, markLocalWrite) {
+  const row = document.createElement('div');
+  // Update DOM state so the UI reflects current data.
+  row.className = 'checklist-item-row';
+  const input = document.createElement('input');
+  input.placeholder = 'Item label';
+  input.value = value || '';
+  // Wire user-driven events to keep the pane reactive.
+  input.addEventListener('input', () => {
+    markLocalWrite();
+    syncFromDOM(groupsWrap, profileState, state, stateKey);
+  });
+  const btnRemove = document.createElement('button');
+  btnRemove.type = 'button';
+  btnRemove.className = 'mini danger';
+  btnRemove.textContent = '×';
+  btnRemove.addEventListener('click', () => {
+    row.remove();
+    markLocalWrite();
+    syncFromDOM(groupsWrap, profileState, state, stateKey);
+  });
+  row.appendChild(input);
+  row.appendChild(btnRemove);
+  return row;
+}
+
+
+// Add Group.
+function addGroup(groupsWrap, profileState, state, stateKey, title, items, markLocalWrite) {
+  const resolvedTitle = title || '';
+  const resolvedItems = items || [];
+  const group = document.createElement('div');
+  // Update DOM state so the UI reflects current data.
+  group.className = 'group builder-group';
+  const lab = document.createElement('label');
+  lab.textContent = 'Group';
+  const titleInput = document.createElement('input');
+  titleInput.placeholder = 'Group Title (e.g., Core Capabilities)';
+  titleInput.value = resolvedTitle;
+  // Wire user-driven events to keep the pane reactive.
+  titleInput.addEventListener('input', () => {
+    markLocalWrite();
+    syncFromDOM(groupsWrap, profileState, state, stateKey);
+  });
+  const titleWrap = document.createElement('div');
+  titleWrap.className = 'checklist-title-wrap';
+  titleWrap.appendChild(lab);
+  titleWrap.appendChild(titleInput);
+  const itemsWrap = document.createElement('div');
+  itemsWrap.className = 'checklist-items-wrap';
+  const inner = document.createElement('div');
+  resolvedItems.forEach((it) => {
+    inner.appendChild(itemRow(groupsWrap, profileState, state, stateKey, (it && it.label) || '', markLocalWrite));
+  });
+  const btnAdd = document.createElement('button');
+  btnAdd.type = 'button';
+  btnAdd.className = 'mini';
+  btnAdd.textContent = '+ Item';
+  btnAdd.addEventListener('click', () => {
+    inner.appendChild(itemRow(groupsWrap, profileState, state, stateKey, '', markLocalWrite));
+    markLocalWrite();
+    syncFromDOM(groupsWrap, profileState, state, stateKey);
+  });
+  itemsWrap.appendChild(inner);
+  itemsWrap.appendChild(btnAdd);
+  group.appendChild(titleWrap);
+  group.appendChild(itemsWrap);
+  groupsWrap.appendChild(group);
+  markLocalWrite();
+  syncFromDOM(groupsWrap, profileState, state, stateKey);
+}
+
+
+// Render.
+function render(node, state, stateKey, opts, markLocalWrite) {
+  const titleText = opts.title || 'Checklist Groups';
+  const defaultGroupTitle = opts.defaultGroup || 'Core Skills';
+  const profileState = ensureProfileState(state, stateKey);
+  // Update DOM state so the UI reflects current data.
+  node.innerHTML = '';
+  const section = document.createElement('section');
+  section.className = 'pane pane--builder-checklists';
+  const h2 = document.createElement('h2');
+  h2.className = 'pane-title';
+  h2.textContent = titleText;
+  const groupsWrap = document.createElement('div');
+  groupsWrap.className = 'builder-checklist-groups';
+  const btnAddGroup = document.createElement('button');
+  btnAddGroup.type = 'button';
+  btnAddGroup.className = 'mini';
+  btnAddGroup.textContent = '+ Add Group';
+  const actions = document.createElement('div');
+  actions.className = 'actions';
+  actions.appendChild(btnAddGroup);
+  section.appendChild(h2);
+  section.appendChild(groupsWrap);
+  section.appendChild(actions);
+  node.appendChild(section);
+  // Wire user-driven events to keep the pane reactive.
+  btnAddGroup.addEventListener('click', () => {
+    addGroup(groupsWrap, profileState, state, stateKey, '', [], markLocalWrite);
+  });
+  // Mutate shared state so dependent panes stay in sync.
+  const existing = Array.isArray(profileState.options) ? profileState.options : [];
+  if (existing.length) {
+    existing.forEach((g) => {
+      addGroup(groupsWrap, profileState, state, stateKey, g.title, g.items || [], markLocalWrite);
+    });
+  } else {
+    addGroup(groupsWrap, profileState, state, stateKey, defaultGroupTitle, [], markLocalWrite);
+  }
+}
+
+
+// Build the builder checklist pane with explicit state dependencies.
+export function buildBuilderChecklistPane(options = {}) {
+  const {
+    state,
+    events = null,
+    stateKey = DEFAULT_STATE_KEY,
+    title = 'Checklist Groups',
+    defaultGroup = 'Core Skills',
+  } = options;
+  if (!state || typeof state.get !== 'function' || typeof state.set !== 'function') {
+    throw new Error('BuilderChecklistPane: missing state adapter');
+  }
+  const node = document.createElement('div');
+  // Update DOM state so the UI reflects current data.
+  node.className = 'pane-builder-checklists';
+  const paneOptions = {
+    title,
+    defaultGroup,
+  };
+  let ignoreNext = false;
+  // Mark Local Write.
+  function markLocalWrite() {
+    ignoreNext = true;
+    setTimeout(() => {
+      ignoreNext = false;
+    }, 0);
+  }
+  render(node, state, stateKey, paneOptions, markLocalWrite);
+  let off = null;
+  if (events && typeof events.on === 'function') {
+    off = events.on(`state:changed:${stateKey}`, () => {
+      if (ignoreNext) return;
+      render(node, state, stateKey, paneOptions, markLocalWrite);
+    });
+  }
+  return {
+    node,
+    destroy() {
+      if (typeof off === 'function') off();
+    },
+  };
+}

@@ -1,201 +1,190 @@
-// js/Common/ProfileLoaderPane.js
-// Pane: Load Profile button (scoped).
-// -----------------------------------------------------------------------------
-// Stores profile in Panes scoped state (api.state.set).
-// PanesCore emits state:changed + state:changed:<key> automatically.
-// Notifies ticker via 'ticker:temporary'.
-// Uses data-state-key only.
-// -----------------------------------------------------------------------------
 
-(function () {
-  'use strict';
+import { notifyTicker } from '../utils/ticker.js';
+import { button, el } from '../utils/dom.js';
 
-  function readFileAsText(file) {
-    return new Promise(function (resolve, reject) {
-      var reader = new FileReader();
-      reader.onload = function () { resolve(String(reader.result || '')); };
-      reader.onerror = function () { reject(new Error('File read error')); };
-      reader.readAsText(file);
-    });
-  }
+const DEFAULT_STATE_KEY = 'TEXT_PROFILE';
+const DEFAULT_ACCEPT = 'application/json';
+const DEFAULT_PROFILE_URL = 'data/default.json';
 
-  function parseJSONSafe(text, fallbackMsg) {
-    try {
-      return { ok: true, value: JSON.parse(text) };
-    } catch (e) {
-      return { ok: false, error: fallbackMsg || 'Invalid JSON file' };
-    }
-  }
+const DEFAULT_MESSAGES = {
+  defaultLoaded: 'Default profile loaded',
+  defaultFailed: 'Failed to load default profile',
+  profileLoaded: 'Profile loaded: {file}',
+  invalidJson: 'Invalid JSON file',
+  readFailed: 'Failed to read file',
+};
 
-  function notifyTicker(tickerId, text, ms, color, api) {
-    if (!tickerId || !text) return;
-    if (!api || !api.events || !api.events.emit) return;
-
-    api.events.emit('ticker:temporary', {
-      tickerId: tickerId,
-      text: text,
-      ms: ms,
-      color: color
-    });
-  }
-
-  function loadDefaultProfile(url, stateKey, statusEl, tickerId, messages, api) {
-    return fetch(url)
-      .then(function (res) {
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        return res.text();
-      })
-      .then(function (txt) {
-        var parsed = parseJSONSafe(txt, messages.invalidJson);
-        if (!parsed.ok) {
-          var msgErr = messages.invalidJson || parsed.error || 'Invalid JSON file';
-          if (statusEl) {
-            statusEl.textContent = msgErr;
-            statusEl.style.color = '#f87171';
-          }
-          notifyTicker(tickerId, msgErr, 3000, '#f87171', api);
-          return;
-        }
-
-        var profile = parsed.value;
-
-        // This triggers PanesCore: state:changed + state:changed:<stateKey>
-        api.state.set(stateKey, profile);
-
-        var msg = messages.defaultLoaded || 'Default profile loaded';
-        if (statusEl) {
-          statusEl.textContent = msg;
-          statusEl.style.color = 'var(--accent)';
-        }
-        notifyTicker(tickerId, msg, 2500, 'var(--accent)', api);
-      })
-      .catch(function () {
-        var emsg = messages.defaultFailed || 'Failed to load default profile';
-        if (statusEl) {
-          statusEl.textContent = emsg;
-          statusEl.style.color = '#f87171';
-        }
-        notifyTicker(tickerId, emsg, 3000, '#f87171', api);
-      });
-  }
-
-  function initOne(container, api) {
-    if (!api || !api.state || !api.events) {
-      throw new Error('ProfileLoaderPane: missing Panes api');
-    }
-
-    var ds = container.dataset || {};
-
-    var buttonLabel    = ds.buttonLabel    || 'Load Profile';
-    var accept         = ds.accept         || 'application/json';
-    var defaultProfile = ds.defaultProfile || null;
-
-    // Only source of truth now
-    var stateKey       = ds.stateKey || 'TEXT_PROFILE';
-
-    var tickerId       = ds.tickerId || null;
-
-    var messages = {
-      defaultLoaded: ds.msgDefaultLoaded || 'Default profile loaded',
-      defaultFailed: ds.msgDefaultFailed || 'Failed to load default profile',
-      profileLoaded: ds.msgProfileLoaded || 'Profile loaded: {file}',
-      invalidJson:   ds.msgInvalidJson   || 'Invalid JSON file',
-      readFailed:    ds.msgReadFailed    || 'Failed to read file'
-    };
-
-    var actions = document.createElement('div');
-    actions.className = 'actions actions-centered';
-
-    var btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'primary';
-    btn.textContent = buttonLabel;
-
-    var input = document.createElement('input');
-    input.type = 'file';
-    input.accept = accept;
-    input.hidden = true;
-
-    actions.appendChild(btn);
-    actions.appendChild(input);
-
-    container.innerHTML = '';
-    container.appendChild(actions);
-
-    var status = null;
-    if (!tickerId) {
-      status = document.createElement('div');
-      status.className = 'status-text';
-      container.appendChild(status);
-    }
-
-    function onBtnClick() { input.click(); }
-    btn.addEventListener('click', onBtnClick);
-
-    function onInputChange(ev) {
-      var file = ev.target.files && ev.target.files[0];
-      if (!file) return;
-
-      readFileAsText(file)
-        .then(function (txt) {
-          var parsed = parseJSONSafe(txt, messages.invalidJson);
-          if (!parsed.ok) {
-            var msgErr = messages.invalidJson || parsed.error || 'Invalid JSON file';
-            if (status) {
-              status.textContent = msgErr;
-              status.style.color = '#f87171';
-            }
-            notifyTicker(tickerId, msgErr, 3000, '#f87171', api);
-            return;
-          }
-
-          var profile = parsed.value;
-
-          // This triggers PanesCore: state:changed + state:changed:<stateKey>
-          api.state.set(stateKey, profile);
-
-          var fileName = file.name || 'profile.json';
-          var msg = String(messages.profileLoaded || 'Profile loaded: {file}').replace('{file}', fileName);
-
-          if (status) {
-            status.textContent = msg;
-            status.style.color = 'var(--accent)';
-          }
-          notifyTicker(tickerId, msg, 2500, 'var(--accent)', api);
-        })
-        .catch(function () {
-          var emsg = messages.readFailed || 'Failed to read file';
-          if (status) {
-            status.textContent = emsg;
-            status.style.color = '#f87171';
-          }
-          notifyTicker(tickerId, emsg, 3000, '#f87171', api);
-        })
-        .finally(function () {
-          ev.target.value = '';
-        });
-    }
-
-    input.addEventListener('change', onInputChange);
-
-    if (defaultProfile) {
-      loadDefaultProfile(defaultProfile, stateKey, status, tickerId, messages, api);
-    }
-
-    return {
-      destroy: function () {
-        btn.removeEventListener('click', onBtnClick);
-        input.removeEventListener('change', onInputChange);
-      }
-    };
-  }
-
-  if (!window.Panes || !window.Panes.register) {
-    throw new Error('ProfileLoaderPane requires PanesCore (Panes.register not found).');
-  }
-
-  window.Panes.register('profile-loader', function (container, api) {
-    container.classList.add('pane-profile-loader');
-    return initOne(container, api);
+// readFileAsText handles this function's logic.
+function readFileAsText(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error('File read error'));
+    reader.readAsText(file);
   });
-})();
+}
+
+
+// Parse JSONSafe.
+function parseJSONSafe(text, fallbackMsg) {
+  try {
+    return { ok: true, value: JSON.parse(text) };
+  } catch {
+    return { ok: false, error: fallbackMsg || 'Invalid JSON file' };
+  }
+}
+
+
+// Resolve Messages.
+function resolveMessages(messages) {
+  return { ...DEFAULT_MESSAGES, ...(messages || {}) };
+}
+
+
+// Set Shared State.
+function setSharedState(state, stateKey, setState, profile) {
+  if (typeof setState === 'function') {
+    setState(profile);
+    return;
+  }
+  if (state && typeof state.set === 'function') {
+    // Mutate shared state so dependent panes stay in sync.
+    state.set(stateKey, profile);
+  }
+}
+
+
+// Update Status.
+function updateStatus(statusEl, text, color) {
+  if (!statusEl) return;
+  // Update DOM state so the UI reflects current data.
+  statusEl.textContent = text;
+  statusEl.style.color = color || '';
+}
+
+
+// Load Default Profile.
+async function loadDefaultProfile({
+  url,
+  messages,
+  statusEl,
+  tickerController,
+  state,
+  stateKey,
+  setState,
+  isDestroyed,
+}) {
+  try {
+    // Handle async work before continuing UI updates.
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const txt = await res.text();
+    if (isDestroyed()) return;
+    const parsed = parseJSONSafe(txt, messages.invalidJson);
+    if (!parsed.ok) {
+      const msgErr = messages.invalidJson || parsed.error || 'Invalid JSON file';
+      updateStatus(statusEl, msgErr, '#f87171');
+      notifyTicker(tickerController, msgErr, 3000);
+      return;
+    }
+    setSharedState(state, stateKey, setState, parsed.value);
+    const msg = messages.defaultLoaded || 'Default profile loaded';
+    updateStatus(statusEl, msg, 'var(--accent)');
+    notifyTicker(tickerController, msg, 2500);
+  } catch {
+    if (isDestroyed()) return;
+    const emsg = messages.defaultFailed || 'Failed to load default profile';
+    updateStatus(statusEl, emsg, '#f87171');
+    notifyTicker(tickerController, emsg, 3000);
+  }
+}
+
+
+// Build a profile loader pane with explicit configuration.
+export function buildProfileLoaderPane(options = {}) {
+  const {
+    buttonLabel = 'Load Profile',
+    accept = DEFAULT_ACCEPT,
+    defaultProfileUrl = DEFAULT_PROFILE_URL,
+    loadDefaultOnInit = true,
+    state = null,
+    stateKey = DEFAULT_STATE_KEY,
+    setState,
+    tickerController = null,
+    messages,
+  } = options;
+  const resolvedMessages = resolveMessages(messages);
+  const node = el('div', { className: 'pane-profile-loader' });
+  const actions = el('div', { className: 'actions actions-centered' });
+  const btn = button({ className: 'primary', text: buttonLabel });
+  const input = el('input', { attrs: { type: 'file', accept } });
+  input.hidden = true;
+  // Update DOM state so the UI reflects current data.
+  actions.appendChild(btn);
+  actions.appendChild(input);
+  node.appendChild(actions);
+  const status = tickerController
+    ? null
+    : (() => {
+        const statusNode = el('div', { className: 'status-text' });
+        node.appendChild(statusNode);
+        return statusNode;
+      })();
+  let destroyed = false;
+  const isDestroyed = () => destroyed;
+  // On Btn Click.
+  function onBtnClick() {
+    input.click();
+  }
+  // On Input Change.
+  async function onInputChange(ev) {
+    const file = ev.target.files && ev.target.files[0];
+    if (!file) return;
+    try {
+      // Handle async work before continuing UI updates.
+      const txt = await readFileAsText(file);
+      if (isDestroyed()) return;
+      const parsed = parseJSONSafe(txt, resolvedMessages.invalidJson);
+      if (!parsed.ok) {
+        const msgErr = resolvedMessages.invalidJson || parsed.error || 'Invalid JSON file';
+        updateStatus(status, msgErr, '#f87171');
+        notifyTicker(tickerController, msgErr, 3000);
+        return;
+      }
+      setSharedState(state, stateKey, setState, parsed.value);
+      const fileName = file.name || 'profile.json';
+      const msg = String(resolvedMessages.profileLoaded || 'Profile loaded: {file}').replace('{file}', fileName);
+      updateStatus(status, msg, 'var(--accent)');
+      notifyTicker(tickerController, msg, 2500);
+    } catch {
+      if (isDestroyed()) return;
+      const emsg = resolvedMessages.readFailed || 'Failed to read file';
+      updateStatus(status, emsg, '#f87171');
+      notifyTicker(tickerController, emsg, 3000);
+    } finally {
+      ev.target.value = '';
+    }
+  }
+  btn.addEventListener('click', onBtnClick);
+  input.addEventListener('change', onInputChange);
+  if (loadDefaultOnInit && defaultProfileUrl) {
+    loadDefaultProfile({
+      url: defaultProfileUrl,
+      messages: resolvedMessages,
+      statusEl: status,
+      tickerController,
+      state,
+      stateKey,
+      setState,
+      isDestroyed,
+    });
+  }
+  return {
+    node,
+    destroy() {
+      destroyed = true;
+      btn.removeEventListener('click', onBtnClick);
+      input.removeEventListener('change', onInputChange);
+    },
+  };
+}

@@ -1,215 +1,165 @@
-// js/Builder/BuilderFormPane.js
-//
-// Builder form pane (scoped).
-// - Edits profile.form (key/value pairs)
-// - Reads/writes via Panes scoped state
-// - Re-renders on state:changed:<stateKey>
 
-(function () {
-  'use strict';
+import { DEFAULT_STATE_KEY, ensureProfileState } from '../core/profileState.js';
+import { parseCsvOrArray } from '../utils/parse.js';
 
-  function parseDefaultFields(raw) {
-    if (!raw) return ['applicant', 'role'];
-    return String(raw)
-      .split(',')
-      .map(function (s) { return s.trim(); })
-      .filter(Boolean);
+const DEFAULT_DEFAULT_FIELDS = ['applicant', 'role'];
+
+// setForm handles this function's logic.
+function setForm(state, stateKey, nextForm) {
+  const st = ensureProfileState(state, stateKey);
+  st.form = nextForm || {};
+  // Mutate shared state so dependent panes stay in sync.
+  state.set(stateKey, st);
+}
+
+
+// Render.
+function render(node, state, cfg, markLocalWrite) {
+  const titleText = cfg.title || 'Form Fields';
+  // Update DOM state so the UI reflects current data.
+  node.innerHTML = '';
+  const section = document.createElement('section');
+  section.className = 'pane pane--builder-form';
+  const h2 = document.createElement('h2');
+  h2.className = 'pane-title';
+  h2.textContent = titleText;
+  const rowsWrap = document.createElement('div');
+  rowsWrap.className = 'builder-form-rows';
+  const btnAdd = document.createElement('button');
+  btnAdd.className = 'mini';
+  btnAdd.type = 'button';
+  btnAdd.textContent = '+ Add Field';
+  const actions = document.createElement('div');
+  actions.className = 'actions';
+  actions.appendChild(btnAdd);
+  section.appendChild(h2);
+  section.appendChild(rowsWrap);
+  section.appendChild(actions);
+  node.appendChild(section);
+  // Read Current Form From DOM.
+  function readCurrentFormFromDOM() {
+    const out = {};
+    const blocks = rowsWrap.querySelectorAll('.form-field-block');
+    Array.prototype.forEach.call(blocks, (block) => {
+      const keyInput = block.querySelector('input[data-role="key"]');
+      const valInput = block.querySelector('input[data-role="val"]');
+      const k = keyInput ? String(keyInput.value || '').trim() : '';
+      if (!k) return;
+      out[k] = valInput ? String(valInput.value || '') : '';
+    });
+    return out;
   }
-
-  function getState(api, stateKey) {
-    var st = api.state.get(stateKey);
-    if (!st || typeof st !== 'object') {
-      st = {
-        form: {},
-        styles: [],
-        options: [],
-        mode: 'template',
-        template: '',
-        prompt: '',
-        ollama: null
-      };
-      api.state.set(stateKey, st);
-    }
-    if (!st.form || typeof st.form !== 'object') st.form = {};
-    if (!Array.isArray(st.styles)) st.styles = [];
-    if (!Array.isArray(st.options)) st.options = [];
-    return st;
+  // Commit DOMTo State.
+  function commitDOMToState() {
+    markLocalWrite();
+    setForm(state, cfg.stateKey, readCurrentFormFromDOM());
   }
-
-  function setForm(api, stateKey, nextForm) {
-    var st = getState(api, stateKey);
-    st.form = nextForm || {};
-    api.state.set(stateKey, st);
-  }
-
-  function render(container, api, cfg, markLocalWrite) {
-    var titleText = cfg.title || 'Form Fields';
-
-    container.innerHTML = '';
-
-    var section = document.createElement('section');
-    section.className = 'pane pane--builder-form';
-
-    var h2 = document.createElement('h2');
-    h2.className = 'pane-title';
-    h2.textContent = titleText;
-
-    var rowsWrap = document.createElement('div');
-    rowsWrap.className = 'builder-form-rows';
-
-    var btnAdd = document.createElement('button');
-    btnAdd.className = 'mini';
-    btnAdd.type = 'button';
-    btnAdd.textContent = '+ Add Field';
-
-    var actions = document.createElement('div');
-    actions.className = 'actions';
-    actions.appendChild(btnAdd);
-
-    section.appendChild(h2);
-    section.appendChild(rowsWrap);
-    section.appendChild(actions);
-    container.appendChild(section);
-
-    function readCurrentFormFromDOM() {
-      var out = {};
-      var blocks = rowsWrap.querySelectorAll('.form-field-block');
-      Array.prototype.forEach.call(blocks, function (block) {
-        var keyInput = block.querySelector('input[data-role="key"]');
-        var valInput = block.querySelector('input[data-role="val"]');
-        var k = keyInput ? String(keyInput.value || '').trim() : '';
-        if (!k) return;
-        out[k] = valInput ? String(valInput.value || '') : '';
-      });
-      return out;
+  // Add Field Row.
+  function addFieldRow(key, val) {
+    const block = document.createElement('div');
+    // Update DOM state so the UI reflects current data.
+    block.className = 'group form-field-block';
+    const keyRow = document.createElement('div');
+    keyRow.className = 'form-field-key-row';
+    const kLab = document.createElement('label');
+    kLab.textContent = 'Field Name';
+    const keyInput = document.createElement('input');
+    keyInput.className = 'form-key-input';
+    keyInput.placeholder = 'key (e.g., applicant)';
+    keyInput.value = key || '';
+    keyInput.dataset.role = 'key';
+    const btnRemove = document.createElement('button');
+    btnRemove.type = 'button';
+    btnRemove.className = 'mini danger';
+    btnRemove.textContent = 'Remove';
+    keyRow.appendChild(kLab);
+    keyRow.appendChild(keyInput);
+    keyRow.appendChild(btnRemove);
+    const valRow = document.createElement('div');
+    valRow.className = 'form-field-value-row';
+    const vLab = document.createElement('label');
+    vLab.textContent = 'Value';
+    const valInput = document.createElement('input');
+    valInput.className = 'form-value-input';
+    valInput.placeholder = 'value (e.g., Jane Doe)';
+    valInput.value = val || '';
+    valInput.dataset.role = 'val';
+    valRow.appendChild(vLab);
+    valRow.appendChild(valInput);
+    // On Any Input.
+    function onAnyInput() {
+      commitDOMToState();
     }
-
-    function commitDOMToState() {
-      markLocalWrite();
-      setForm(api, cfg.stateKey, readCurrentFormFromDOM());
-    }
-
-    function addFieldRow(key, val) {
-      var block = document.createElement('div');
-      block.className = 'group form-field-block';
-
-      var keyRow = document.createElement('div');
-      keyRow.className = 'form-field-key-row';
-
-      var kLab = document.createElement('label');
-      kLab.textContent = 'Field Name';
-
-      var keyInput = document.createElement('input');
-      keyInput.className = 'form-key-input';
-      keyInput.placeholder = 'key (e.g., applicant)';
-      keyInput.value = key || '';
-      keyInput.dataset.role = 'key';
-
-      var btnRemove = document.createElement('button');
-      btnRemove.type = 'button';
-      btnRemove.className = 'mini danger';
-      btnRemove.textContent = 'Remove';
-
-      keyRow.appendChild(kLab);
-      keyRow.appendChild(keyInput);
-      keyRow.appendChild(btnRemove);
-
-      var valRow = document.createElement('div');
-      valRow.className = 'form-field-value-row';
-
-      var vLab = document.createElement('label');
-      vLab.textContent = 'Value';
-
-      var valInput = document.createElement('input');
-      valInput.className = 'form-value-input';
-      valInput.placeholder = 'value (e.g., Jane Doe)';
-      valInput.value = val || '';
-      valInput.dataset.role = 'val';
-
-      valRow.appendChild(vLab);
-      valRow.appendChild(valInput);
-
-      function onAnyInput() {
-        commitDOMToState();
-      }
-
-      keyInput.addEventListener('input', onAnyInput);
-      valInput.addEventListener('input', onAnyInput);
-
-      btnRemove.addEventListener('click', function () {
-        block.remove();
-        commitDOMToState();
-      });
-
-      block.appendChild(keyRow);
-      block.appendChild(valRow);
-      rowsWrap.appendChild(block);
-    }
-
-    // Seed UI from state
-    var st = getState(api, cfg.stateKey);
-    var form = st.form || {};
-    var keys = Object.keys(form);
-
-    if (keys.length) {
-      keys.forEach(function (k) { addFieldRow(k, form[k]); });
-    } else {
-      parseDefaultFields(cfg.defaultFieldsRaw).forEach(function (k) {
-        addFieldRow(k, '');
-      });
-      commitDOMToState(); // persist seeded defaults
-    }
-
-    btnAdd.addEventListener('click', function () {
-      addFieldRow('', '');
+    keyInput.addEventListener('input', onAnyInput);
+    valInput.addEventListener('input', onAnyInput);
+    btnRemove.addEventListener('click', () => {
+      block.remove();
       commitDOMToState();
     });
-
-    return {
-      destroy: function () { /* no-op */ }
-    };
+    block.appendChild(keyRow);
+    block.appendChild(valRow);
+    rowsWrap.appendChild(block);
   }
-
-  function initOne(container, api) {
-    if (!api || !api.state || !api.events) {
-      throw new Error('BuilderFormPane: missing Panes api');
-    }
-
-    var ds = container.dataset || {};
-    var cfg = {
-      stateKey: ds.stateKey || 'TEXT_PROFILE',
-      title: ds.title || 'Form Fields',
-      defaultFieldsRaw: ds.defaultFields || 'applicant,role'
-    };
-
-    // Prevent re-render loops when *this pane* writes state on input.
-    var ignoreNext = false;
-    function markLocalWrite() {
-      ignoreNext = true;
-      setTimeout(function () { ignoreNext = false; }, 0);
-    }
-
-    render(container, api, cfg, markLocalWrite);
-
-    // Re-render when state changes externally (e.g., ProfileLoader loads a file).
-    var off = api.events.on('state:changed:' + cfg.stateKey, function () {
-      if (ignoreNext) return;
-      render(container, api, cfg, markLocalWrite);
+  const st = ensureProfileState(state, cfg.stateKey);
+  const form = st.form || {};
+  const keys = Object.keys(form);
+  if (keys.length) {
+    keys.forEach((k) => {
+      addFieldRow(k, form[k]);
     });
-
-    return {
-      destroy: function () {
-        if (off) off();
-      }
-    };
+  } else {
+    parseCsvOrArray(cfg.defaultFields, DEFAULT_DEFAULT_FIELDS).forEach((k) => {
+      addFieldRow(k, '');
+    });
+    commitDOMToState();
   }
-
-  if (!window.Panes || !window.Panes.register) {
-    throw new Error('BuilderFormPane requires PanesCore (Panes.register not found).');
-  }
-
-  window.Panes.register('builder-form', function (container, api) {
-    container.classList.add('pane-builder-form');
-    return initOne(container, api);
+  btnAdd.addEventListener('click', () => {
+    addFieldRow('', '');
+    commitDOMToState();
   });
-})();
+}
+
+
+// Build the builder form pane with explicit state dependencies.
+export function buildBuilderFormPane(options = {}) {
+  const {
+    state,
+    events = null,
+    stateKey = DEFAULT_STATE_KEY,
+    title = 'Form Fields',
+    defaultFields = DEFAULT_DEFAULT_FIELDS,
+  } = options;
+  if (!state || typeof state.get !== 'function' || typeof state.set !== 'function') {
+    throw new Error('BuilderFormPane: missing state adapter');
+  }
+  const node = document.createElement('div');
+  // Update DOM state so the UI reflects current data.
+  node.className = 'pane-builder-form';
+  let ignoreNext = false;
+  // Mark Local Write.
+  function markLocalWrite() {
+    ignoreNext = true;
+    setTimeout(() => {
+      ignoreNext = false;
+    }, 0);
+  }
+  const cfg = {
+    stateKey,
+    title,
+    defaultFields,
+  };
+  render(node, state, cfg, markLocalWrite);
+  let off = null;
+  if (events && typeof events.on === 'function') {
+    off = events.on(`state:changed:${stateKey}`, () => {
+      if (ignoreNext) return;
+      render(node, state, cfg, markLocalWrite);
+    });
+  }
+  return {
+    node,
+    destroy() {
+      if (typeof off === 'function') off();
+    },
+  };
+}

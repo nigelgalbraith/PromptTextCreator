@@ -1,260 +1,205 @@
-// js/GeneratorPiperPane.js
-//
-// Generator Piper TTS pane (scoped).
-// - Uses PanesCore events for ticker (no window events)
-// - No DOMContentLoaded fallback (requires PanesCore)
-// - Audio state is per-pane instance (no shared module global)
 
-(function () {
-  'use strict';
+import { notifyTicker } from '../utils/ticker.js';
+import { button, el } from '../utils/dom.js';
 
-  var DEFAULT_PIPER_BASE = '/piper';
-  var DEFAULT_VOICE_ID = 'en_US-amy-low';
+const DEFAULT_PIPER_BASE = '/piper';
+const DEFAULT_VOICE_ID = 'en_US-amy-low';
 
-  function notifyTicker(tickerId, text, ms, color, api) {
-    if (!tickerId || !text) return;
-    if (!api || !api.events || !api.events.emit) return;
+// cleanText handles this function's logic.
+function cleanText(text) {
+  return String(text || '')
+    .replace(/\r\n/g, '\n')
+    .replace(/  +\n/g, '\n')
+    .replace(/^\s*text:\s*/i, '');
+}
 
-    api.events.emit('ticker:temporary', {
-      tickerId: tickerId,
-      text: text,
-      ms: ms,
-      color: color
-    });
-  }
 
-  function cleanText(text) {
-    return String(text || '')
-      .replace(/\r\n/g, '\n')
-      .replace(/  +\n/g, '\n')
-      .replace(/^\s*text:\s*/i, '');
-  }
-
-  // Create a speak function that closes over a per-pane audio reference
-  function makeSpeaker() {
-    var currentAudio = null;
-
-    function stop() {
-      if (currentAudio) {
-        try { currentAudio.pause(); } catch (e) {}
+// Make Speaker.
+function makeSpeaker() {
+  let currentAudio = null;
+  // Stop.
+  function stop() {
+    if (currentAudio) {
+      try {
+        currentAudio.pause();
+      } catch {
+        // ignore
       }
-      currentAudio = null;
     }
-
-    function speak(text, base, voiceId) {
-      if (!text || !text.trim()) return Promise.resolve(null);
-
-      base = base || DEFAULT_PIPER_BASE;
-      voiceId = voiceId || DEFAULT_VOICE_ID;
-
-      var clean = cleanText(text);
-
-      return fetch(base + '/', {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: clean
+    currentAudio = null;
+  }
+  // Speak.
+  function speak(text, base, voiceId) {
+    if (!text || !text.trim()) return Promise.resolve(null);
+    const resolvedBase = base || DEFAULT_PIPER_BASE;
+    const resolvedVoiceId = voiceId || DEFAULT_VOICE_ID;
+    const clean = cleanText(text);
+    // Handle async work before continuing UI updates.
+    return fetch(`${resolvedBase}/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: clean,
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error(`Piper TTS failed (HTTP ${res.status})`);
+        return res.arrayBuffer();
       })
-        .then(function (res) {
-          if (!res.ok) throw new Error('Piper TTS failed (HTTP ' + res.status + ')');
-          return res.arrayBuffer();
-        })
-        .then(function (buf) {
-          var blob = new Blob([buf], { type: 'audio/wav' });
-
-          // Stop previous audio in THIS pane instance
-          stop();
-
-          currentAudio = new Audio(URL.createObjectURL(blob));
-          currentAudio.play();
-          return currentAudio;
-        });
-    }
-
-    return { speak: speak, stop: stop };
+      .then((buf) => {
+        const blob = new Blob([buf], { type: 'audio/wav' });
+        stop();
+        currentAudio = new Audio(URL.createObjectURL(blob));
+        currentAudio.play();
+        return currentAudio;
+      });
   }
+  return { speak, stop };
+}
 
-  function initOne(container, api) {
-    var ds = container.dataset || {};
 
-    var base = ds.piperBase || DEFAULT_PIPER_BASE;
-    var voiceId = ds.voiceId || ds.voice || DEFAULT_VOICE_ID;
-
-    var targetSelector = ds.targetSelector || '#generator-text';
-
-    var tickerId = ds.tickerId || null;
-
-    var tickerMsgSpeaking = ds.tickerSpeaking || 'Reading preview aloud.';
-    var tickerMsgStopped  = ds.tickerStopped  || 'Stopped voice playback.';
-    var tickerMsgError    = ds.tickerError    || 'Piper TTS error.';
-    var tickerMsgBusy     = ds.tickerBusy     || 'Already speaking…';
-    var tickerMsgEmpty    = ds.tickerEmpty    || 'Nothing to speak.';
-
-    container.innerHTML = '';
-
-    var section = document.createElement('section');
-    section.className = 'pane pane--generator-piper';
-
-    var h2 = document.createElement('h2');
-    h2.className = 'pane-title';
-    h2.textContent = 'Voice (Piper)';
-
-    var details = document.createElement('div');
-    details.className = 'voice-details';
-
-    var lab = document.createElement('label');
-    lab.textContent = 'Voice in use';
-
-    var voiceDiv = document.createElement('div');
-    voiceDiv.className = 'voice-label';
-    voiceDiv.textContent = voiceId;
-
-    details.appendChild(lab);
-    details.appendChild(voiceDiv);
-
-    var actions = document.createElement('div');
-    actions.className = 'actions';
-
-    var btnSay = document.createElement('button');
-    btnSay.className = 'primary';
-    btnSay.type = 'button';
-    btnSay.textContent = 'Speak Preview';
-
-    var btnStop = document.createElement('button');
-    btnStop.type = 'button';
-    btnStop.textContent = 'Stop';
+// Build the generator Piper pane with explicit target and ticker bindings.
+export function buildGeneratorPiperPane(options = {}) {
+  const {
+    piperBase = DEFAULT_PIPER_BASE,
+    voiceId = DEFAULT_VOICE_ID,
+    targetElement = null,
+    tickerController = null,
+    title = 'Voice (Piper)',
+    tickerMsgSpeaking = 'Reading preview aloud.',
+    tickerMsgStopped = 'Stopped voice playback.',
+    tickerMsgError = 'Piper TTS error.',
+    tickerMsgBusy = 'Already speaking…',
+    tickerMsgEmpty = 'Nothing to speak.',
+  } = options;
+  const node = el('div', { className: 'pane-generator-piper' });
+  const section = el('section', { className: 'pane pane--generator-piper' });
+  const h2 = el('h2', { className: 'pane-title', text: title });
+  const details = el('div', { className: 'voice-details' });
+  const lab = el('label', { text: 'Voice in use' });
+  const voiceDiv = el('div', { className: 'voice-label', text: voiceId });
+  // Update DOM state so the UI reflects current data.
+  details.appendChild(lab);
+  details.appendChild(voiceDiv);
+  const actions = el('div', { className: 'actions' });
+  const btnSay = button({ className: 'primary', text: 'Speak Preview' });
+  const btnStop = button({ text: 'Stop' });
+  btnStop.disabled = true;
+  actions.appendChild(btnSay);
+  actions.appendChild(btnStop);
+  const flashDiv = el('div', { className: 'flash' });
+  section.appendChild(h2);
+  section.appendChild(details);
+  section.appendChild(actions);
+  section.appendChild(flashDiv);
+  node.appendChild(section);
+  const speaker = makeSpeaker();
+  let isSpeaking = false;
+  let dotTimer = null;
+  let currentAudio = null;
+  // Set Flash.
+  function setFlash(msg) {
+    // Update DOM state so the UI reflects current data.
+    flashDiv.textContent = msg || '';
+  }
+  // Start Dots.
+  function startDots(baseMsg) {
+    if (dotTimer) clearInterval(dotTimer);
+    let dots = 0;
+    dotTimer = setInterval(() => {
+      dots = (dots + 1) % 4;
+      setFlash(`${baseMsg}${'.'.repeat(dots)}`);
+    }, 350);
+  }
+  // Stop Dots.
+  function stopDots(msg) {
+    if (dotTimer) {
+      clearInterval(dotTimer);
+      dotTimer = null;
+    }
+    if (msg) setFlash(msg);
+  }
+  // Reset UI.
+  function resetUI(doneMsg, tickerMsg) {
+    isSpeaking = false;
+    btnSay.disabled = false;
     btnStop.disabled = true;
-
-    actions.appendChild(btnSay);
-    actions.appendChild(btnStop);
-
-    var flashDiv = document.createElement('div');
-    flashDiv.className = 'flash';
-
-    section.appendChild(h2);
-    section.appendChild(details);
-    section.appendChild(actions);
-    section.appendChild(flashDiv);
-    container.appendChild(section);
-
-    var speaker = makeSpeaker();
-
-    var isSpeaking = false;
-    var dotTimer = null;
-    var currentAudio = null;
-
-    function setFlash(msg) {
-      flashDiv.textContent = msg || '';
+    currentAudio = null;
+    stopDots(doneMsg);
+    if (tickerMsg) notifyTicker(tickerController, tickerMsg, 2500);
+  }
+  // On Audio Done.
+  function onAudioDone() {
+    if (currentAudio) {
+      try {
+        currentAudio.removeEventListener('ended', onAudioDone);
+        currentAudio.removeEventListener('error', onAudioDone);
+      } catch {
+        // ignore
+      }
     }
-
-    function startDots(baseMsg) {
+    resetUI('Done.', tickerMsgStopped);
+  }
+  // On Speak Click.
+  function onSpeakClick() {
+    if (isSpeaking) {
+      setFlash('Already speaking…');
+      notifyTicker(tickerController, tickerMsgBusy, 2000);
+      return;
+    }
+    const text = targetElement ? targetElement.textContent || '' : '';
+    if (!text.trim()) {
+      setFlash(tickerMsgEmpty);
+      notifyTicker(tickerController, tickerMsgEmpty, 2500);
+      return;
+    }
+    isSpeaking = true;
+    btnSay.disabled = true;
+    btnStop.disabled = false;
+    const speakMsg = String(tickerMsgSpeaking).replace('{voice}', voiceId);
+    notifyTicker(tickerController, speakMsg, 4000);
+    startDots(`Speaking with ${voiceId}`);
+    speaker
+      .speak(text, piperBase, voiceId)
+      .then((audio) => {
+        currentAudio = audio;
+        if (audio && typeof audio.addEventListener === 'function') {
+          // Wire user-driven events to keep the pane reactive.
+          audio.addEventListener('ended', onAudioDone);
+          audio.addEventListener('error', onAudioDone);
+        } else {
+          resetUI('Done.', tickerMsgStopped);
+        }
+      })
+      .catch(() => {
+        resetUI('Piper error — cannot speak.', null);
+        notifyTicker(tickerController, tickerMsgError, 3500);
+      });
+  }
+  // On Stop Click.
+  function onStopClick() {
+    speaker.stop();
+    if (currentAudio) {
+      try {
+        currentAudio.removeEventListener('ended', onAudioDone);
+        currentAudio.removeEventListener('error', onAudioDone);
+      } catch {
+        // ignore
+      }
+    }
+    resetUI('Stopped.', tickerMsgStopped);
+  }
+  btnSay.addEventListener('click', onSpeakClick);
+  btnStop.addEventListener('click', onStopClick);
+  return {
+    node,
+    destroy() {
+      try {
+        speaker.stop();
+      } catch {
+        // ignore
+      }
       if (dotTimer) clearInterval(dotTimer);
-
-      var dots = 0;
-      dotTimer = setInterval(function () {
-        dots = (dots + 1) % 4;
-        setFlash(baseMsg + '.'.repeat(dots));
-      }, 350);
-    }
-
-    function stopDots(msg) {
-      if (dotTimer) {
-        clearInterval(dotTimer);
-        dotTimer = null;
-      }
-      if (msg) setFlash(msg);
-    }
-
-    function resetUI(doneMsg, tickerMsg) {
-      isSpeaking = false;
-      btnSay.disabled = false;
-      btnStop.disabled = true;
-      currentAudio = null;
-      stopDots(doneMsg);
-      if (tickerMsg) notifyTicker(tickerId, tickerMsg, 2500, 'var(--accent)', api);
-    }
-
-    function onAudioDone() {
-      if (currentAudio) {
-        try {
-          currentAudio.removeEventListener('ended', onAudioDone);
-          currentAudio.removeEventListener('error', onAudioDone);
-        } catch (e) {}
-      }
-      resetUI('Done.', tickerMsgStopped);
-    }
-
-    function onSpeakClick() {
-      if (isSpeaking) {
-        setFlash('Already speaking…');
-        notifyTicker(tickerId, tickerMsgBusy, 2000, '#f97316', api);
-        return;
-      }
-
-      var target = document.querySelector(targetSelector);
-      var text = target ? (target.textContent || '') : '';
-
-      if (!text.trim()) {
-        setFlash(tickerMsgEmpty);
-        notifyTicker(tickerId, tickerMsgEmpty, 2500, '#f97316', api);
-        return;
-      }
-
-      isSpeaking = true;
-      btnSay.disabled = true;
-      btnStop.disabled = false;
-
-      var speakMsg = String(tickerMsgSpeaking).replace('{voice}', voiceId);
-      notifyTicker(tickerId, speakMsg, 4000, 'var(--accent)', api);
-
-      startDots('Speaking with ' + voiceId);
-
-      speaker.speak(text, base, voiceId)
-        .then(function (audio) {
-          currentAudio = audio;
-
-          if (audio && typeof audio.addEventListener === 'function') {
-            audio.addEventListener('ended', onAudioDone);
-            audio.addEventListener('error', onAudioDone);
-          } else {
-            resetUI('Done.', tickerMsgStopped);
-          }
-        })
-        .catch(function () {
-          resetUI('Piper error — cannot speak.', null);
-          notifyTicker(tickerId, tickerMsgError, 3500, '#f87171', api);
-        });
-    }
-
-    function onStopClick() {
-      speaker.stop();
-      if (currentAudio) {
-        try {
-          currentAudio.removeEventListener('ended', onAudioDone);
-          currentAudio.removeEventListener('error', onAudioDone);
-        } catch (e) {}
-      }
-      resetUI('Stopped.', tickerMsgStopped);
-    }
-
-    btnSay.addEventListener('click', onSpeakClick);
-    btnStop.addEventListener('click', onStopClick);
-
-    return {
-      destroy: function () {
-        try { speaker.stop(); } catch (e) {}
-        if (dotTimer) clearInterval(dotTimer);
-        btnSay.removeEventListener('click', onSpeakClick);
-        btnStop.removeEventListener('click', onStopClick);
-      }
-    };
-  }
-
-  if (!window.Panes || !window.Panes.register) {
-    throw new Error('GeneratorPiperPane requires PanesCore (Panes.register not found).');
-  }
-
-  window.Panes.register('generator-piper', function (container, api) {
-    container.classList.add('pane-generator-piper');
-    return initOne(container, api);
-  });
-})();
+      btnSay.removeEventListener('click', onSpeakClick);
+      btnStop.removeEventListener('click', onStopClick);
+    },
+  };
+}
